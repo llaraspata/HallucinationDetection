@@ -92,3 +92,8 @@ target/
 # VS code
 .vs
 
+
+
+wandb/
+models/
+artifacts/
