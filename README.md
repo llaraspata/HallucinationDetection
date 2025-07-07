@@ -1,1 +1,1 @@
-# MuSHROOM_SemEval25
+# Hallucination Detection
