@@ -9,14 +9,14 @@ class LogisticRegression(nn.Module):
         self.linear = nn.Linear(input_dim, 1, bias=use_bias)
 
     def forward(self, x):
-        return torch.sigmoid(self.linear(x)).squeeze(1)
+        return torch.sigmoid(self.linear(x)).squeeze(0)
 
     @torch.inference_mode()
     def predict(self, x):
         if not isinstance(x, torch.Tensor):
             x = torch.tensor(x)
         x.to(self.linear.weight.device)
-        return torch.sigmoid(self.linear(x)).squeeze(1)
+        return torch.sigmoid(self.linear(x)).squeeze(0)
     
 
 class KCProbing:
@@ -24,7 +24,7 @@ class KCProbing:
     # Constants
     # -------------
     MODEL_DIR = "kc_hidden_layer{layer}.pt"
-    MODEL_NAME = "prob_model_list_{layer}_L1factor3"
+    MODEL_NAME = "prob_model_list_{layer}_L1factor3.pt"
 
     LABEL = {
         0: "no_conflict",
@@ -34,11 +34,11 @@ class KCProbing:
 
     # -------------
     # Constructor
-    # ------------
+    # -------------
     def __init__(self, project_dir, layer=16):
         self.layer = layer
         self.model_name = self.MODEL_NAME.format(layer=layer)
-        self.model_path = os.path.join(project_dir, "model", self.MODEL_DIR.format(layer=layer), self.model_name)
+        self.model_path = os.path.join(project_dir, "models", self.MODEL_DIR.format(layer=layer), self.model_name)
         self.model = self.load_probing_model()
 
 
@@ -47,8 +47,6 @@ class KCProbing:
     # -------------
     def load_probing_model(self):
         saved_data = torch.load(self.model_path, weights_only=True)
-        print(f"Type of saved data: {type(saved_data)}")
-        print(f"Content: {saved_data}")
         
         model = LogisticRegression(input_dim=4096, use_bias=True)
         
@@ -78,9 +76,9 @@ class KCProbing:
 
     @torch.no_grad()
     def predict(self, activation):
-        self.model.eval()
+        self.model.to("cuda").eval()
 
-        output = self.model(activation)
+        output = self.model(activation.cuda())
         predicted = (output > 0.5).float()
 
         return predicted
