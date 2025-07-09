@@ -22,4 +22,4 @@ source .venv/bin/activate
 # Delete previous wandb offline runs
 rm -rf wandb/
 
-srun -u python -W ignore -m scr.evaluation.eval
+srun -u python -W ignore -m src.evaluation.eval
