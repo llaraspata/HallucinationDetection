@@ -118,26 +118,28 @@ class HallucinationDetection:
         print(f"\t -> Predictions saved to {path_to_save}")
 
 
-    def eval(self, kc_layer):
+    def eval(self, target):
         result_path = os.path.join(self.project_dir, self.PREDICTION_DIR)
+        print("--"*50)
+        print("Hallucination Detection - Evaluation")
+        print(f"Activation: {target}, Layer: {self.kc_layer}")
+        print("--"*50)
 
-        for target in self.ACTIVATION_TARGET:
-            print(f"\nEvaluating {target.capitalize()} Activations")
-            print(f"\n1. Load predictions for layer {kc_layer}")
-            preds_path = os.path.join(result_path, target, self.PREDICTIONS_FILE_NAME.format(layer=kc_layer))
-            if not os.path.exists(preds_path):
-                raise FileNotFoundError(f"Predictions file not found: {preds_path}")
-            
-            preds = json.load(open(preds_path, "r"))
+        print(f"\n1. Load predictions for layer {self.kc_layer}")
+        preds_path = os.path.join(result_path, target, self.PREDICTIONS_FILE_NAME.format(layer=self.kc_layer))
+        if not os.path.exists(preds_path):
+            raise FileNotFoundError(f"Predictions file not found: {preds_path}")
+        
+        preds = json.load(open(preds_path, "r"))
 
-            labels = [1.] * len(preds)  # All instances are hallucinations
+        labels = [1.] * len(preds)  # All instances are hallucinations
 
-            print("\n2. Compute metrics")
-            metrics = HallucinationDetection.compute_metrics(preds, labels)
+        print("\n2. Compute metrics")
+        metrics = HallucinationDetection.compute_metrics(preds, labels)
 
-            print("\n3. Save results")
-            self._save_metrics(metrics, target)        
-            
+        print("\n3. Save results")
+        self._save_metrics(metrics, target)        
+        
         print("--"*50)
 
 

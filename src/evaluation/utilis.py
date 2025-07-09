@@ -17,12 +17,12 @@ def read_metrics(metrics_dir):
 
         for f in files:
             if f.startswith(METRICS_FILE_NAME) and f.endswith(".json"):
-                metrics_path = os.path.join(metrics_path, f)
+                m_path = os.path.join(metrics_path, f)
                 match = re.search(r'metrics_layer(\d+).json', f)
 
                 if match:
                     layer = int(match.group(1))
-                    with open(metrics_path, "r") as file:
+                    with open(m_path, "r") as file:
                         m = json.load(file)
                         m["layer"] = layer
                         m["activation"] = activation

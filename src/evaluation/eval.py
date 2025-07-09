@@ -26,8 +26,10 @@ def main():
 
     hallucination_detector = HallucinationDetection(project_dir=PROJECT_ROOT)
 
-    for kc_layer in HallucinationDetection.TARGET_LAYERS:
-        hallucination_detector.eval(kc_layer)
+    for target in HallucinationDetection.ACTIVATION_TARGET:
+        for kc_layer in HallucinationDetection.TARGET_LAYERS:
+            hallucination_detector.load_kc_probing(activation=target, layer=kc_layer)
+            hallucination_detector.eval(target)
 
     metrics = ut.read_metrics(os.path.join(PROJECT_ROOT, HallucinationDetection.RESULTS_DIR))
     run.log({"metrics": wandb.Table(dataframe=metrics)})
