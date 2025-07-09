@@ -93,8 +93,9 @@ target/
 .vs
 
 
-
+# Project related
 wandb/
 models/
+images/
 artifacts/
 activation_cache/
