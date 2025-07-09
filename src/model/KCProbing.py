@@ -23,7 +23,7 @@ class KCProbing:
     # -------------
     # Constants
     # -------------
-    MODEL_DIR = "kc_hidden_layer{layer}.pt"
+    MODEL_DIR = "kc_{activation}_layer{layer}.pt"
     MODEL_NAME = "prob_model_list_{layer}_L1factor3.pt"
 
     LABEL = {
@@ -35,10 +35,11 @@ class KCProbing:
     # -------------
     # Constructor
     # -------------
-    def __init__(self, project_dir, layer=16):
+    def __init__(self, project_dir, activation="hidden", layer=16):
         self.layer = layer
+        self.activation = activation
         self.model_name = self.MODEL_NAME.format(layer=layer)
-        self.model_path = os.path.join(project_dir, "models", self.MODEL_DIR.format(layer=layer), self.model_name)
+        self.model_path = os.path.join(project_dir, "models", self.MODEL_DIR.format(activation=activation, layer=layer), self.model_name)
         self.model = self.load_probing_model()
 
 

@@ -6,7 +6,7 @@ import src.model.utils as ut
 from src.model.KCProbing import KCProbing
 from src.data.MushroomDataset import MushroomDataset
 from src.model.InspectOutputContext import InspectOutputContext
-from src.model.prompts import PROMPT_QA
+from src.model.prompts import PROMPT_CORRECT as prompt
 from sklearn.metrics import auc
 from sklearn.metrics import roc_auc_score, precision_recall_curve
 
@@ -14,13 +14,14 @@ class HallucinationDetection:
     # -------------
     # Constants
     # -------------
-    TARGET_LAYERS = list(range(14, 17))     # Upper bound excluded
+    TARGET_LAYERS = list(range(10, 25))     # Upper bound excluded
     MAX_NEW_TOKENS = 100
     DATASET_NAME = "mushroom"
     CACHE_DIR_NAME = "activation_cache"
     TASK = "hallucination_detection"
-    ACTIVATION_TARGET = ["hidden"]          # Here only hidden, but in the referece study were: hidden, mlp, attn
+    ACTIVATION_TARGET = ["hidden", "mlp", "attn"]
     PREDICTION_DIR = "predictions"
+    RESULTS_DIR = "results"
     PREDICTIONS_FILE_NAME = "kc_predictions_layer{layer}.jsonl"
     LABELS = {
         0: "Not Hallucination",
@@ -30,27 +31,37 @@ class HallucinationDetection:
     # -------------
     # Constructor
     # -------------
-    def __init__(self, project_dir, llm_name, kc_layer, use_local=False, dtype=torch.bfloat16, use_device_map=True, use_flash_attn=False):
-        if kc_layer not in self.TARGET_LAYERS:
-            raise ValueError(f"KC layer must be one of {self.TARGET_LAYERS}, but got {kc_layer}")
-        print("--"*50)
-        print("Init")
-        print("--"*50)
-
+    def __init__(self, project_dir):
         self.project_dir = project_dir
 
-        print(f"\n 1. Loading Knowledge-Conflict Probing model for layer {kc_layer}")
-        self.kc_layer = kc_layer
-        self.kc_model = KCProbing(project_dir, layer=kc_layer)
+    
+    def load_dataset(self, dataset_name=DATASET_NAME):
+        print("--"*50)
+        print(f"Loading dataset {dataset_name}")
+        print("--"*50)
+        if dataset_name == "mushroom":
+            val_path = os.path.join(self.project_dir, "data", "processed", "val.jsonl")
+            self.dataset = MushroomDataset(data_path=val_path)
+        else:
+            raise ValueError(f"Dataset {dataset_name} not supported.")
 
-        print(f"\n 2. Loading LLM {llm_name}")
+
+    def load_llm(self, llm_name, use_local=False, dtype=torch.bfloat16, use_device_map=True, use_flash_attn=False):
+        print("--"*50)
+        print(f"Loading LLM {llm_name}")
+        print("--"*50)
         self.llm_name = llm_name
         self.tokenizer = ut.load_tokenizer(llm_name, local=use_local)
         self.llm = ut.load_llm(llm_name, ut.create_bnb_config(), local=use_local, dtype=dtype, use_device_map=use_device_map, use_flash_attention=use_flash_attn)
-        
-        print(f"\n 3. Loading {self.DATASET_NAME} dataset")
-        val_path = os.path.join(project_dir, "data", "processed", "val.jsonl")
-        self.dataset = MushroomDataset(data_path=val_path)
+        print("--"*50)
+
+    
+    def load_kc_probing(self, activation, layer):
+        print("--"*50)
+        print(f"Loading KC probing model for layer {layer} of {activation} activations")
+        print("--"*50)
+        self.kc_layer = layer
+        self.kc_model = KCProbing(self.project_dir, activation=activation, layer=layer)
         print("--"*50)
 
 
@@ -58,9 +69,12 @@ class HallucinationDetection:
     # Main Methods
     # -------------
     @torch.no_grad()
-    def predict(self):
+    def predict_llm(self, llm_name, use_local=False, dtype=torch.bfloat16, use_device_map=True, use_flash_attn=False):
+        self.load_dataset()
+        self.load_llm(llm_name, use_local=use_local, dtype=dtype, use_device_map=use_device_map, use_flash_attn=use_flash_attn)
+
         print("--"*50)
-        print("Hallucination Detection")
+        print("Hallucination Detection - Saving LLM's activations")
         print("--"*50)
         
         print("\n0. Prepare folders")
@@ -68,33 +82,62 @@ class HallucinationDetection:
        
         print(f"\n1. Saving {self.llm_name} activations for layers {self.TARGET_LAYERS}")
         self.save_avtivations()
-
-        print("\n2. Running KC Probing")
-        self.predict_kc()
         
         print("--"*50)
 
+    
+    @torch.no_grad()
+    def predict_kc(self, target, layer):
+        self.load_kc_probing(target, layer)
 
-    def eval(self):
         print("--"*50)
-        print("Hallucination Detection Evaluation")
+        print("Hallucination Detection - Saving KC Probing Predictions")
+        print(f"Activation: {target}, Layer: {self.kc_layer}")
         print("--"*50)
-        
-        print(f"\n1. Load predictions for layer {self.kc_layer}")
-        result_path = os.path.join(self.project_dir, self.PREDICTION_DIR, self.PREDICTIONS_FILE_NAME.format(layer=self.kc_layer))
-        if not os.path.exists(result_path):
-            raise FileNotFoundError(f"Predictions file not found: {result_path}")
-        
-        preds = json.load(open(result_path, "r"))
 
-        labels = [1.] * len(preds)  # All instances are hallucinations
-
-        print("\n2. Compute metrics")
-        metrics = HallucinationDetection.compute_metrics(preds, labels)
-
-        print("\n3. Save results")
-        self._save_metrics(metrics)        
+        result_path = os.path.join(self.project_dir, self.PREDICTION_DIR)
         
+        activations = ut.load_activations(
+            model_name=self.llm_name,
+            data_name=self.DATASET_NAME,
+            analyse_activation=target,
+            activation_type=self.TASK,
+            layer_idx=self.kc_layer,
+            results_dir=os.path.join(self.project_dir, self.CACHE_DIR_NAME)
+        )
+
+        preds = []
+        for activation in activations:
+            preds.append(self.kc_model.predict(activation).item())
+
+        path_to_save = os.path.join(result_path, target, self.PREDICTIONS_FILE_NAME.format(layer=self.kc_layer))
+        if not os.path.exists(os.path.dirname(path_to_save)):
+            os.makedirs(os.path.dirname(path_to_save))
+        json.dump(preds, open(path_to_save, "w"), indent=4)
+        
+        print(f"\t -> Predictions saved to {path_to_save}")
+
+
+    def eval(self, kc_layer):
+        result_path = os.path.join(self.project_dir, self.PREDICTION_DIR)
+
+        for target in self.ACTIVATION_TARGET:
+            print(f"\nEvaluating {target.capitalize()} Activations")
+            print(f"\n1. Load predictions for layer {kc_layer}")
+            preds_path = os.path.join(result_path, target, self.PREDICTIONS_FILE_NAME.format(layer=kc_layer))
+            if not os.path.exists(preds_path):
+                raise FileNotFoundError(f"Predictions file not found: {preds_path}")
+            
+            preds = json.load(open(preds_path, "r"))
+
+            labels = [1.] * len(preds)  # All instances are hallucinations
+
+            print("\n2. Compute metrics")
+            metrics = HallucinationDetection.compute_metrics(preds, labels)
+
+            print("\n3. Save results")
+            self._save_metrics(metrics, target)        
+            
         print("--"*50)
 
 
@@ -102,12 +145,15 @@ class HallucinationDetection:
     # Public Methods
     # -------------
     def save_avtivations(self):
-        module_names = [f'model.layers.{idx}' for idx in self.TARGET_LAYERS]
+        module_names = []
+        module_names += [f'model.layers.{idx}' for idx in self.TARGET_LAYERS]
+        module_names += [f'model.layers.{idx}.self_attn' for idx in self.TARGET_LAYERS]
+        module_names += [f'model.layers.{idx}.mlp' for idx in self.TARGET_LAYERS]
 
         for idx in tqdm(range(len(self.dataset)), desc="Saving activations"):
-            question, answer, lang = self.dataset[idx]
+            question, answer, instance_id = self.dataset[idx]
 
-            model_input = PROMPT_QA.format(question=question, answer=answer)
+            model_input = prompt.format(question=question, answer=answer)
             tokens = self.tokenizer(model_input, return_tensors="pt")
             attention_mask = tokens["attention_mask"].to("cuda") if "attention_mask" in tokens else None
 
@@ -126,19 +172,25 @@ class HallucinationDetection:
                 generated_ids = output.sequences[0][tokens["input_ids"].shape[1]:]
                 generated_text = self.tokenizer.decode(generated_ids, skip_special_tokens=True)
                 
-                ut.save_generation_output(generated_text, model_input, idx, self.generation_save_dir)
+                ut.save_generation_output(generated_text, model_input, instance_id, self.generation_save_dir)
                 
                 if hasattr(output, 'scores') and output.scores:
                     logits = torch.stack(output.scores, dim=1)  # [batch, seq_len, vocab_size]
-                    ut.save_model_logits(logits, idx, self.logits_save_dir)
+                    ut.save_model_logits(logits, instance_id, self.logits_save_dir)
                 
             for module, ac in inspect.catcher.items():
                 # ac: [batch_size, sequence_length, hidden_dim]
                 ac_last = ac[0, -1].float()
                 layer_idx = int(module.split(".")[2])
 
-                save_name = f"layer{layer_idx}-id{idx}.pt"
-                save_path = os.path.join(self.hidden_save_dir, save_name)
+                save_name = f"layer{layer_idx}-id{instance_id}.pt"
+                if "mlp" in module:
+                    save_path = os.path.join(self.mlp_save_dir, save_name)
+                elif "self_attn" in module:
+                    save_path = os.path.join(self.attn_save_dir, save_name)
+                else:
+                    save_path = os.path.join(self.hidden_save_dir, save_name)
+
                 torch.save(ac_last, save_path)
 
         self.combine_activations()
@@ -184,28 +236,6 @@ class HallucinationDetection:
                     os.remove(p)
 
 
-    def predict_kc(self):
-        activations = ut.load_activations(
-            model_name=self.llm_name,
-            data_name=self.DATASET_NAME,
-            analyse_activation=self.ACTIVATION_TARGET[0],  # Only hidden activations
-            activation_type=self.TASK,
-            layer_idx=self.kc_layer,
-            results_dir=os.path.join(self.project_dir, self.CACHE_DIR_NAME)
-        )
-
-        preds = []
-        for activation in activations:
-            preds.append(self.kc_model.predict(activation).item())
-
-        result_path = os.path.join(self.project_dir, self.PREDICTION_DIR, self.PREDICTIONS_FILE_NAME.format(layer=self.kc_layer))
-        if not os.path.exists(os.path.dirname(result_path)):
-            os.makedirs(os.path.dirname(result_path))
-        json.dump(preds, open(result_path, "w"), indent=4)
-        
-        print(f"\t -> Predictions saved to {result_path}")
-
-
     @staticmethod
     def compute_metrics(preds, labels):
         correct = sum([1 for p, l in zip(preds, labels) if p == l])
@@ -227,16 +257,19 @@ class HallucinationDetection:
         results_dir = os.path.join(self.project_dir, self.CACHE_DIR_NAME)
 
         self.hidden_save_dir = os.path.join(results_dir, model_name, self.DATASET_NAME, "activation_hidden", self.TASK)
+        self.mlp_save_dir = os.path.join(results_dir, model_name, self.DATASET_NAME, "activation_mlp", self.TASK)
+        self.attn_save_dir = os.path.join(results_dir, model_name, self.DATASET_NAME, "activation_attn", self.TASK)
+
         self.generation_save_dir = os.path.join(results_dir, model_name, self.DATASET_NAME, "generations", self.TASK)
         self.logits_save_dir = os.path.join(results_dir, model_name, self.DATASET_NAME, "logits", self.TASK)
         
-        for sd in [self.hidden_save_dir, self.generation_save_dir, self.logits_save_dir]:
+        for sd in [self.hidden_save_dir, self.mlp_save_dir, self.attn_save_dir, self.generation_save_dir, self.logits_save_dir]:
             if not os.path.exists(sd):
                 os.makedirs(sd)
 
     
-    def _save_metrics(self, metrics):
-        metrics_path = os.path.join(self.project_dir, self.PREDICTION_DIR, f"metrics_layer{self.kc_layer}.json")
+    def _save_metrics(self, metrics, target):
+        metrics_path = os.path.join(self.project_dir, self.RESULTS_DIR, target, f"metrics_layer{self.kc_layer}.json")
 
         if not os.path.exists(os.path.dirname(metrics_path)):
             os.makedirs(os.path.dirname(metrics_path))
