@@ -40,7 +40,7 @@ class HallucinationDetection:
         print(f"Loading dataset {dataset_name}")
         print("--"*50)
         if dataset_name == "mushroom":
-            val_path = os.path.join(self.project_dir, "data", "processed", "val.jsonl")
+            val_path = os.path.join(self.project_dir, "data", "processed", "labeled.jsonl")
             self.dataset = MushroomDataset(data_path=val_path)
         else:
             raise ValueError(f"Dataset {dataset_name} not supported.")

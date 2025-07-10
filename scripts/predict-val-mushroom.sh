@@ -9,7 +9,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --gpus-per-task=1
 #SBATCH --mem=10000
-#SBATCH --job-name=predict-val-mushroom
+#SBATCH --job-name=predict-mushroom
 #SBATCH --out=output.log
 #SBATCH --err=error.log
 #SBATCH --mail-type=ALL
