@@ -254,7 +254,8 @@ class HallucinationDetection:
         preds_df = pd.DataFrame(preds)
         
         # Compute metrics at dataset level
-        metrics = HallucinationDetection.compute_metrics(preds["prediction"])
+        all_preds = preds_df["prediction"].tolist()
+        metrics = HallucinationDetection.compute_metrics(all_preds)
 
         # Compute metrics for each language
         langs = preds_df["lang"].unique()

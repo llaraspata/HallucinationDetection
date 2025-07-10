@@ -129,9 +129,8 @@ def plot_all_langs_accuracy(metrics_dir, images_dir, model_name, dataset_name):
         for lang in all_languages:
             if lang in act_records.columns:
                 sns.lineplot(data=act_records, x="layer", y=lang, label=lang)
-        # plt.title(f"Accuracy for languages with {activation} activation")
         plt.ylabel("Accuracy")
-        plt.xlabel("Layer")
+        plt.xlabel(f"{activation.capitalize()} Layer")
         plt.grid(True)
         plt.savefig(os.path.join(image_save_dir, f"{model_name} {dataset_name} {activation} All Languages Accuracy.pdf"), format='pdf', bbox_inches='tight')
         plt.show()

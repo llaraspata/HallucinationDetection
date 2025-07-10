@@ -9,7 +9,7 @@ PROJECT_ROOT = os.getcwd()
 WANDB_ENTITY = "llaraspata-cilab"
 WANDB_PROJECT = "Hallucination"
 DATASET_NAME = "mushroom"
-WANDB_RUN_NAME = f"{DATASET_NAME}-eval"
+WANDB_RUN_NAME = f"eval-{DATASET_NAME}"
 
 
 def main():
