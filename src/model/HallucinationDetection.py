@@ -89,6 +89,7 @@ class HallucinationDetection:
     @torch.no_grad()
     def predict_kc(self, target, layer):
         self.load_kc_probing(target, layer)
+        self.load_dataset()
 
         print("--"*50)
         print("Hallucination Detection - Saving KC Probing Predictions")
@@ -97,7 +98,7 @@ class HallucinationDetection:
 
         result_path = os.path.join(self.project_dir, self.PREDICTION_DIR)
         
-        activations = ut.load_activations(
+        activations, instance_ids = ut.load_activations(
             model_name=self.llm_name,
             data_name=self.DATASET_NAME,
             analyse_activation=target,
@@ -107,8 +108,13 @@ class HallucinationDetection:
         )
 
         preds = []
-        for activation in activations:
-            preds.append(self.kc_model.predict(activation).item())
+        for activation, instance_id in zip(activations, instance_ids):
+            pred = {
+                "instance_id": instance_id,
+                "lang": self.dataset.get_language_by_instance_id(instance_id),
+                "prediction": self.kc_model.predict(activation).item()
+            }
+            preds.append(pred)
 
         path_to_save = os.path.join(result_path, target, self.PREDICTIONS_FILE_NAME.format(layer=self.kc_layer))
         if not os.path.exists(os.path.dirname(path_to_save)):
@@ -224,15 +230,20 @@ class HallucinationDetection:
 
                 acts = []
                 loaded_paths = []
+                instance_ids = []
                 for idx, (act_f, instance_id) in enumerate(layer_group_files[layer_id]):
                     assert idx == instance_id
                     path_to_load = os.path.join(act_dir, act_f)
                     acts.append(torch.load(path_to_load))
                     loaded_paths.append(path_to_load)
+                    instance_ids.append(instance_id)
 
                 acts = torch.stack(acts)
                 save_path = os.path.join(act_dir, f"layer{layer_id}_activations.pt")
                 torch.save(acts, save_path)
+
+                ids_save_path = os.path.join(act_dir, f"layer{layer_id}_instance_ids.json")
+                json.dump(instance_ids, open(ids_save_path, "w"), indent=4)
 
                 for p in loaded_paths:
                     os.remove(p)

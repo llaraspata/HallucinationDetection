@@ -171,5 +171,8 @@ def load_activations(
     model_name = model_name.split("/")[-1]
     act_dir = os.path.join(results_dir, model_name, data_name, f"activation_{analyse_activation}", activation_type, f"layer{layer_idx}_activations.pt")
     
-    return torch.load(act_dir, map_location="cuda")
+    ids_path = os.path.join(results_dir, model_name, data_name, f"activation_{analyse_activation}", activation_type, f"layer{layer_idx}_instance_ids.json")
+    instance_ids = json.load(open(ids_path, "r"))
+
+    return torch.load(act_dir, map_location="cuda"), instance_ids
 
