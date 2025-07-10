@@ -32,3 +32,12 @@ def read_metrics(metrics_dir):
                     raise ValueError(f"Layer not found in filename: {f}")
 
     return pd.DataFrame.from_records(metrics)
+
+
+def get_languages(metrics):
+    columns_to_drop = ["layer", "activation", "ACC", "AUC", "AUPRC"]
+    columns = metrics.columns.tolist()
+    
+    result_columns = [col for col in columns if col not in columns_to_drop]
+
+    return result_columns

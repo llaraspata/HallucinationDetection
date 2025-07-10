@@ -1,6 +1,7 @@
 import os
 import json
 import torch
+import pandas as pd
 from tqdm import tqdm
 import src.model.utils as ut
 from src.model.KCProbing import KCProbing
@@ -138,10 +139,8 @@ class HallucinationDetection:
         
         preds = json.load(open(preds_path, "r"))
 
-        labels = [1.] * len(preds)  # All instances are hallucinations
-
         print("\n2. Compute metrics")
-        metrics = HallucinationDetection.compute_metrics(preds, labels)
+        metrics = HallucinationDetection.compute_all_metrics(preds)
 
         print("\n3. Save results")
         self._save_metrics(metrics, target)        
@@ -250,7 +249,27 @@ class HallucinationDetection:
 
 
     @staticmethod
-    def compute_metrics(preds, labels):
+    def compute_all_metrics(preds):
+        # Convert preds to a df
+        preds_df = pd.DataFrame(preds)
+        
+        # Compute metrics at dataset level
+        metrics = HallucinationDetection.compute_metrics(preds["prediction"])
+
+        # Compute metrics for each language
+        langs = preds_df["lang"].unique()
+        for lang in langs:
+            lang_preds = preds_df[preds_df["lang"] == lang]["prediction"].tolist()
+            lang_metrics = HallucinationDetection.compute_metrics(lang_preds)
+            metrics[lang] = lang_metrics["ACC"]
+
+        return metrics
+
+
+    @staticmethod
+    def compute_metrics(preds):
+        labels = [1.] * len(preds)  # All instances are hallucinations
+        
         correct = sum([1 for p, l in zip(preds, labels) if p == l])
 
         AUC = roc_auc_score(labels, preds)
