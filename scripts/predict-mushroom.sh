@@ -17,4 +17,4 @@
 
 source .venv/bin/activate
 
-srun -u python -W ignore -m src.model.predict --model_name "meta-llama/Meta-Llama-3-8B" --use_local
+srun -u python -W ignore -m src.model.predict --model_name "meta-llama/Meta-Llama-3-8B" --data_name "mushroom" --use_local

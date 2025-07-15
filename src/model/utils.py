@@ -1,8 +1,8 @@
 import os
 import json
 import torch
-from typing import Any
 from pathlib import Path
+from typing import Union, Any
 from accelerate import PartialState
 from transformers import AutoTokenizer
 from transformers import BitsAndBytesConfig
@@ -18,8 +18,9 @@ HF_DEFAULT_HOME = os.environ.get("HF_HOME", "~/.cache/huggingface/hub")
 def get_weight_dir(
     model_ref: str,
     *,
-    model_dir: str | os.PathLike[Any] = HF_DEFAULT_HOME,
+    model_dir: Union[str, os.PathLike[Any]] = HF_DEFAULT_HOME,
     revision: str = "main",
+    repo_type="models"
 ) -> Path:
     """
     Parse model name to locally stored weights.
@@ -34,12 +35,16 @@ def get_weight_dir(
     model_dir = Path(model_dir)
     assert model_dir.is_dir(), f"Model directory {model_dir} does not exist or is not a directory."
 
-    model_path = Path(os.path.join(model_dir, "hub", "--".join(["models", *model_ref.split("/")])))
+    model_path = Path(os.path.join(model_dir, "hub", "--".join([repo_type, *model_ref.split("/")])))
     assert model_path.is_dir(), f"Model path {model_path} does not exist or is not a directory."
     
     snapshot_hash = (model_path / "refs" / revision).read_text()
     weight_dir = model_path / "snapshots" / snapshot_hash
     assert weight_dir.is_dir(), f"Weight directory {weight_dir} does not exist or is not a directory."
+
+    if repo_type == "datasets":
+        # For datasets, we need to return the directory containing the dataset files
+        weight_dir = weight_dir / "data"
     
     return weight_dir
 
