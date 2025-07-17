@@ -10,8 +10,8 @@
 #SBATCH --gpus-per-task=1
 #SBATCH --mem=10000
 #SBATCH --job-name=predict-halu_bench
-#SBATCH --out=output.log
-#SBATCH --err=error.log
+#SBATCH --out=output_halubench.log
+#SBATCH --err=error_halubench.log
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=l.laraspata3@phd.uniba.it
 

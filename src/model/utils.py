@@ -20,7 +20,8 @@ def get_weight_dir(
     *,
     model_dir: Union[str, os.PathLike[Any]] = HF_DEFAULT_HOME,
     revision: str = "main",
-    repo_type="models"
+    repo_type="models",
+    subset=None,
 ) -> Path:
     """
     Parse model name to locally stored weights.
@@ -43,8 +44,11 @@ def get_weight_dir(
     assert weight_dir.is_dir(), f"Weight directory {weight_dir} does not exist or is not a directory."
 
     if repo_type == "datasets":
-        # For datasets, we need to return the directory containing the dataset files
-        weight_dir = weight_dir / "data"
+        if subset is not None:
+            weight_dir = weight_dir / subset
+        else:
+            # For datasets, we need to return the directory containing the dataset files
+            weight_dir = weight_dir / "data"
     
     return weight_dir
 

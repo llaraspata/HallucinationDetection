@@ -9,13 +9,15 @@ LABEL_MAPPING = {
 }
 
 class HaluBenchDataset(Dataset):
-    def __init__(self, label=0, use_local=False):
+    def __init__(self, label=0, recreate_ids=True, use_local=False):
         if not use_local:
-            self.data = load_dataset(REPO_NAME)['train']      # Dummy split, it can be val or test, too
+            self.dataset = load_dataset(REPO_NAME)['test']
         else:
             local_model_path = get_weight_dir(REPO_NAME, repo_type="datasets")
-            self.data = load_dataset("parquet", data_dir=local_model_path)['train']      # Dummy split, it can be val or test, too
-            print(self.data)
+            self.dataset = load_dataset("parquet", data_dir=local_model_path)['test']
+
+        if ('instance_id' not in self.dataset.column_names) or recreate_ids:
+            self.dataset = self.create_instance_ids()
 
         self.dataset = self.remove_instances_by_label(label)
         self.dataset = self.dataset.shuffle(seed=42)
@@ -26,7 +28,7 @@ class HaluBenchDataset(Dataset):
 
 
     def __getitem__(self, idx):
-        id = self.dataset[idx]['id']
+        id = self.dataset[idx]['instance_id']
 
         question = self.dataset[idx]['question'] + "\n[Further Knowledge]\n" + self.dataset[idx]['passage']
         answer = self.dataset[idx]['answer']
@@ -34,22 +36,17 @@ class HaluBenchDataset(Dataset):
         return question, answer, id
     
 
-    def get_language_by_instance_id(self, id):
-        matches = self.dataset.filter(lambda x: x["id"] == id)
-
-        if len(matches) == 0:
-            raise ValueError(f"Instance ID {id} non trovato.")
-        
-        return matches[0]["lang"]
+    def get_language_by_instance_id(self, instance_id):
+        return "EN"  # HaluEval is in English, so we return "EN" directly
 
     
     def create_instance_ids(self):
         instance_ids = list(range(len(self.dataset)))
 
-        if "id" in self.dataset.column_names:
-            self.dataset = self.dataset.remove_columns("id")
+        if "instance_id" in self.dataset.column_names:
+            self.dataset = self.dataset.remove_columns("instance_id")
 
-        self.dataset = self.dataset.add_column("id", instance_ids)
+        self.dataset = self.dataset.add_column("instance_id", instance_ids)
 
         return self.dataset
 

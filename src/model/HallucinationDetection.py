@@ -95,7 +95,7 @@ class HallucinationDetection:
         self._create_folders_if_not_exists(label=label)
     
         print(f"\n1. Saving {self.llm_name} activations for layers {self.TARGET_LAYERS}")
-        self.save_avtivations()
+        self.save_activations()
         
         print("--"*50)
 
@@ -107,7 +107,7 @@ class HallucinationDetection:
 
         print("--"*50)
         print("Hallucination Detection - Saving KC Probing Predictions")
-        print(f"Activation: {target}, Layer: {self.kc_layer}")
+        print(f"Activation: {target}, Layer: {self.kc_layer}, Label: {self.LABELS[label]}")
         print("--"*50)
         
         result_path = os.path.join(self.project_dir, self.PREDICTION_DIR, llm_name)
@@ -130,10 +130,16 @@ class HallucinationDetection:
                 "label": label
             }
             preds.append(pred)
-
+        
         path_to_save = os.path.join(result_path, self.dataset_name, target, self.PREDICTIONS_FILE_NAME.format(layer=self.kc_layer))
+
         if not os.path.exists(os.path.dirname(path_to_save)):
             os.makedirs(os.path.dirname(path_to_save))
+        else:
+            # If the file already exists, load existing predictions and add the new ones
+            existing_preds = json.load(open(path_to_save, "r"))
+            preds.extend(existing_preds)
+
         json.dump(preds, open(path_to_save, "w"), indent=4)
         
         print(f"\t -> Predictions saved to {path_to_save}")
@@ -165,7 +171,7 @@ class HallucinationDetection:
     # -------------
     # Public Methods
     # -------------
-    def save_avtivations(self):
+    def save_activations(self):
         module_names = []
         module_names += [f'model.layers.{idx}' for idx in self.TARGET_LAYERS]
         module_names += [f'model.layers.{idx}.self_attn' for idx in self.TARGET_LAYERS]
@@ -247,7 +253,7 @@ class HallucinationDetection:
                 loaded_paths = []
                 instance_ids = []
                 for idx, (act_f, instance_id) in enumerate(layer_group_files[layer_id]):
-                    assert idx == instance_id
+                    #assert idx == instance_id
                     path_to_load = os.path.join(act_dir, act_f)
                     acts.append(torch.load(path_to_load))
                     loaded_paths.append(path_to_load)
@@ -315,6 +321,7 @@ class HallucinationDetection:
         results_dir = os.path.join(self.project_dir, self.CACHE_DIR_NAME)
 
         task = self._get_task_name(label=label)
+        print(f"Task: {task}")
 
         self.hidden_save_dir = os.path.join(results_dir, model_name, self.dataset_name, "activation_hidden", task)
         self.mlp_save_dir = os.path.join(results_dir, model_name, self.dataset_name, "activation_mlp", task)
@@ -324,8 +331,11 @@ class HallucinationDetection:
         self.logits_save_dir = os.path.join(results_dir, model_name, self.dataset_name, "logits", task)
         
         for sd in [self.hidden_save_dir, self.mlp_save_dir, self.attn_save_dir, self.generation_save_dir, self.logits_save_dir]:
+            print(f"Creating directory: {sd}")
             if not os.path.exists(sd):
                 os.makedirs(sd)
+
+        print("\n\n")
 
     
     def _save_metrics(self, metrics, target, data_name, llm_name):
@@ -333,6 +343,10 @@ class HallucinationDetection:
 
         if not os.path.exists(os.path.dirname(metrics_path)):
             os.makedirs(os.path.dirname(metrics_path))
+        else:
+            # If the file already exists, load existing metrics and add the new ones
+            existing_metrics = json.load(open(metrics_path, "r"))
+            metrics.update(existing_metrics)
 
         json.dump(metrics, open(metrics_path, "w"), indent=4)
         

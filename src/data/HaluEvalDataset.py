@@ -5,17 +5,15 @@ from src.model.utils import get_weight_dir
 REPO_NAME = "pminervini/HaluEval"
 
 class HaluEvalDataset(Dataset):
-    def __init__(self, data_path, label=0, recreate_ids=False, use_local=False):
+    def __init__(self, label=0, recreate_ids=True, use_local=False):
         if not use_local:
-            self.data = load_dataset(REPO_NAME)['train']      # Dummy split, it can be val or test, too
+            self.dataset = load_dataset(REPO_NAME, "dialogue")['train']      # Dummy split, it can be val or test, too
         else:
-            local_model_path = get_weight_dir(REPO_NAME, repo_type="datasets")
-            self.data = load_dataset("parquet", data_dir=local_model_path)['train']      # Dummy split, it can be val or test, too
-            print(self.data)
+            local_model_path = get_weight_dir(REPO_NAME, repo_type="datasets", subset="dialogue")
+            self.dataset = load_dataset("parquet", data_dir=local_model_path)['train']      # Dummy split, it can be val or test, too
 
         if ('instance_id' not in self.dataset.column_names) or recreate_ids:
             self.dataset = self.create_instance_ids()
-            self.save_dataset_as_jsonl(output_path=data_path)
         
         self.label = label
         self.dataset = self.dataset.shuffle(seed=42)
@@ -41,12 +39,7 @@ class HaluEvalDataset(Dataset):
     
 
     def get_language_by_instance_id(self, instance_id):
-        matches = self.dataset.filter(lambda x: x["instance_id"] == instance_id)
-
-        if len(matches) == 0:
-            raise ValueError(f"Instance ID {instance_id} non trovato.")
-        
-        return matches[0]["lang"]
+        return "EN"  # HaluEval is in English, so we return "EN" directly
 
     
     def create_instance_ids(self):
@@ -58,7 +51,3 @@ class HaluEvalDataset(Dataset):
         self.dataset = self.dataset.add_column("instance_id", instance_ids)
 
         return self.dataset
-
-
-    def save_dataset_as_jsonl(self, output_path):
-        self.dataset.to_json(output_path, lines=True, orient="records")
