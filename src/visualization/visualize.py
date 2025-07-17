@@ -41,13 +41,30 @@ def plot_model_accuracy(metrics_dir, images_dir, model_name, dataset_name):
         'font.weight': 'bold',
     })
 
-    plt.figure(figsize=(20, 12), dpi=150)
+    plt.figure(figsize=(12, 8), dpi=150)
     sns.lineplot(data=records, x="layer", y="ACC", hue="activation", palette=palette)
     # plt.title(f"Probing model for conflict classification. Accuracy\n{model_name} {data_name}")
     plt.ylabel("Accuracy")
     plt.xlabel("Layer")
     plt.grid(True)
     plt.savefig(os.path.join(image_save_dir, f"{model_name} {dataset_name} Accuracy.pdf"), format='pdf', bbox_inches='tight')
+    plt.show()
+
+    plt.figure(figsize=(12, 8), dpi=150)
+    sns.lineplot(data=records, x="layer", y="auc", hue="activation", palette=palette)
+    plt.ylabel("AUROC")
+    plt.xlabel("Layer")
+    plt.grid(True)
+    plt.legend(loc="lower right", title="activation")
+    plt.savefig(os.path.join(image_save_dir, f"{model_name} {dataset_name} AUROC.pdf"), format='pdf', bbox_inches='tight')
+    plt.show()
+
+    plt.figure(figsize=(12, 8), dpi=150)
+    sns.lineplot(data=records, x="layer", y="auprc", hue="activation", palette=palette)
+    plt.ylabel("AUPRC")
+    plt.xlabel("Layer")
+    plt.grid(True)
+    plt.savefig(os.path.join(image_save_dir, f"{model_name} {dataset_name} AUPRC.pdf"), format='pdf', bbox_inches='tight')
     plt.show()
 
 
@@ -82,7 +99,7 @@ def plot_lang_accuracy(metrics_dir, images_dir, model_name, dataset_name, lang):
         'font.weight': 'bold',
     })
 
-    plt.figure(figsize=(20, 12), dpi=150)
+    plt.figure(figsize=(12, 8), dpi=150)
     sns.lineplot(data=records, x="layer", y=lang, hue="activation", palette=palette)
     # plt.title(f"Accuracy for {lang} language")
     plt.ylabel("Accuracy")
@@ -124,7 +141,7 @@ def plot_all_langs_accuracy(metrics_dir, images_dir, model_name, dataset_name):
     all_languages = ut.get_languages(records)
 
     for activation in HallucinationDetection.ACTIVATION_TARGET:
-        plt.figure(figsize=(20, 12), dpi=150)
+        plt.figure(figsize=(12, 8), dpi=150)
         act_records = records[records["activation"] == activation]
         for lang in all_languages:
             if lang in act_records.columns:

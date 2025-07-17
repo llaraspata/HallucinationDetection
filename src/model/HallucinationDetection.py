@@ -113,7 +113,7 @@ class HallucinationDetection:
         result_path = os.path.join(self.project_dir, self.PREDICTION_DIR, llm_name)
         
         activations, instance_ids = ut.load_activations(
-            model_name=self.llm_name,
+            model_name=llm_name,
             data_name=self.dataset_name,
             analyse_activation=target,
             activation_type=self.LABELS[label],
@@ -137,8 +137,9 @@ class HallucinationDetection:
             os.makedirs(os.path.dirname(path_to_save))
         else:
             # If the file already exists, load existing predictions and add the new ones
-            existing_preds = json.load(open(path_to_save, "r"))
-            preds.extend(existing_preds)
+            if os.path.exists(path_to_save):
+                existing_preds = json.load(open(path_to_save, "r"))
+                preds.extend(existing_preds)
 
         json.dump(preds, open(path_to_save, "w"), indent=4)
         
