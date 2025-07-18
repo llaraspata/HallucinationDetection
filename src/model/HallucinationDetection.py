@@ -346,8 +346,9 @@ class HallucinationDetection:
             os.makedirs(os.path.dirname(metrics_path))
         else:
             # If the file already exists, load existing metrics and add the new ones
-            existing_metrics = json.load(open(metrics_path, "r"))
-            metrics.update(existing_metrics)
+            if os.path.exists(metrics_path):
+                existing_metrics = json.load(open(metrics_path, "r"))
+                metrics.update(existing_metrics)
 
         json.dump(metrics, open(metrics_path, "w"), indent=4)
         
