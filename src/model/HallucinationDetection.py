@@ -37,7 +37,7 @@ class HallucinationDetection:
         self.project_dir = project_dir
 
     
-    def load_dataset(self, dataset_name=DEFAULT_DATASET, use_local=False, label=0):
+    def load_dataset(self, dataset_name=DEFAULT_DATASET, use_local=False, label=1):
         print("--"*50)
         print(f"Loading dataset {dataset_name}")
         print("--"*50)
@@ -83,7 +83,7 @@ class HallucinationDetection:
     # Main Methods
     # -------------
     @torch.no_grad()
-    def predict_llm(self, llm_name, data_name=DEFAULT_DATASET, label=0, use_local=False, dtype=torch.bfloat16, use_device_map=True, use_flash_attn=False):
+    def predict_llm(self, llm_name, data_name=DEFAULT_DATASET, label=1, use_local=False, dtype=torch.bfloat16, use_device_map=True, use_flash_attn=False):
         self.load_dataset(dataset_name=data_name, use_local=use_local, label=label)
         self.load_llm(llm_name, use_local=use_local, dtype=dtype, use_device_map=use_device_map, use_flash_attn=use_flash_attn)
 
@@ -101,7 +101,7 @@ class HallucinationDetection:
 
     
     @torch.no_grad()
-    def predict_kc(self, target, layer, llm_name, data_name=DEFAULT_DATASET, use_local=False, label=0):
+    def predict_kc(self, target, layer, llm_name, data_name=DEFAULT_DATASET, use_local=False, label=1):
         self.load_kc_probing(target, layer)
         self.load_dataset(dataset_name=data_name, use_local=use_local, label=label)
 
@@ -190,8 +190,9 @@ class HallucinationDetection:
                     input_ids=tokens["input_ids"].to("cuda"),
                     max_new_tokens=self.MAX_NEW_TOKENS,
                     attention_mask=attention_mask,
-                    do_sample=True,
-                    temperature=0.7,
+                    do_sample=False,
+                    top_p=None,
+                    temperature=0.,
                     pad_token_id=self.tokenizer.eos_token_id,
                     return_dict_in_generate=True,
                     output_scores=True
@@ -291,7 +292,8 @@ class HallucinationDetection:
             langs = preds_df["lang"].unique()
             for lang in langs:
                 lang_preds = preds_df[preds_df["lang"] == lang]["prediction"].tolist()
-                lang_metrics = HallucinationDetection.compute_metrics(lang_preds)
+                labels = [1.] * len(lang_preds)  # All instances are hallucinations
+                lang_metrics = HallucinationDetection.compute_metrics(lang_preds, labels)
                 metrics[lang] = lang_metrics["ACC"]
 
         return metrics
@@ -316,7 +318,7 @@ class HallucinationDetection:
         return self.LABELS[label]
 
 
-    def _create_folders_if_not_exists(self, label=0):
+    def _create_folders_if_not_exists(self, label=1):
         model_name = self.llm_name.split("/")[-1]
 
         results_dir = os.path.join(self.project_dir, self.CACHE_DIR_NAME)
