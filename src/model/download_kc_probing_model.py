@@ -7,7 +7,7 @@ WANDB_PROJECT = "Hallucination"
 PROJECT_ROOT = os.getcwd()
 MODELS_DIR = os.path.join(PROJECT_ROOT, 'models')
 KC_MODEL_NAME = "llaraspata-cilab/Hallucination/kc_{activation_type}_layer{layer}:latest"
-BEST_LAYERS = list(range(10, 25))   # Upper bound excluded
+BEST_LAYERS = list(range(0, 32))   # Upper bound excluded
 ACTIVATION_TYPES = ["hidden", "mlp", "attn"]
 
 
