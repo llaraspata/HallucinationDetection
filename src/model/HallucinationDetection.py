@@ -17,7 +17,7 @@ class HallucinationDetection:
     # -------------
     # Constants
     # -------------
-    TARGET_LAYERS = list(range(10, 25))     # Upper bound excluded
+    TARGET_LAYERS = list(range(0, 32))     # Upper bound excluded
     MAX_NEW_TOKENS = 100
     DEFAULT_DATASET = "mushroom"
     CACHE_DIR_NAME = "activation_cache"
