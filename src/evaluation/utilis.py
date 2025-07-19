@@ -8,6 +8,19 @@ from src.model.HallucinationDetection import HallucinationDetection
 METRICS_FILE_NAME = "metrics_"
 
 
+def read_all_metrics(metrics_dir):
+    metrics = pd.DataFrame()
+
+    for dataset_name in os.listdir(metrics_dir):
+        if len(metrics) > 0:
+            metrics = pd.concat([metrics, read_metrics(os.path.join(metrics_dir, dataset_name))], ignore_index=True)
+        else:
+            metrics = read_metrics(os.path.join(metrics_dir, dataset_name))
+
+    return metrics
+
+
+
 def read_metrics(metrics_dir):
     metrics = []
 

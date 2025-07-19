@@ -11,7 +11,7 @@ from src.model.HallucinationDetection import HallucinationDetection
 METRICS_FILE_NAME = "metrics_"
 
 
-def plot_model_accuracy(metrics_dir, images_dir, model_name, dataset_name):
+def plot_model_accuracy(metrics_dir, images_dir, model_name, dataset_name="", global_metrics=False):
     """
     Plots the model accuracy from the metrics file and saves the plot as an image.
     
@@ -21,9 +21,13 @@ def plot_model_accuracy(metrics_dir, images_dir, model_name, dataset_name):
         model_name (str): Name of the LLM.
         dataset_name (str): Name of the dataset.
     """
-    records = ut.read_metrics(metrics_dir)
-
     model_name = model_name.split("/")[-1]
+
+    if not global_metrics:
+        records = ut.read_metrics(os.path.join(metrics_dir, model_name, dataset_name))
+    else:
+        records = ut.read_all_metrics(os.path.join(metrics_dir, model_name))
+
     palette = {"hidden": "red", "mlp": "blue", "attn": "green"}
 
     image_save_dir = os.path.join(images_dir, "hallucination_detection")
@@ -50,8 +54,11 @@ def plot_model_accuracy(metrics_dir, images_dir, model_name, dataset_name):
     plt.savefig(os.path.join(image_save_dir, f"{model_name} {dataset_name} Accuracy.pdf"), format='pdf', bbox_inches='tight')
     plt.show()
 
+    if dataset_name == "mushroom":
+        return
+    
     plt.figure(figsize=(12, 8), dpi=150)
-    sns.lineplot(data=records, x="layer", y="auc", hue="activation", palette=palette)
+    sns.lineplot(data=records, x="layer", y="AUC", hue="activation", palette=palette)
     plt.ylabel("AUROC")
     plt.xlabel("Layer")
     plt.grid(True)
@@ -60,7 +67,7 @@ def plot_model_accuracy(metrics_dir, images_dir, model_name, dataset_name):
     plt.show()
 
     plt.figure(figsize=(12, 8), dpi=150)
-    sns.lineplot(data=records, x="layer", y="auprc", hue="activation", palette=palette)
+    sns.lineplot(data=records, x="layer", y="AUPRC", hue="activation", palette=palette)
     plt.ylabel("AUPRC")
     plt.xlabel("Layer")
     plt.grid(True)
@@ -79,9 +86,10 @@ def plot_lang_accuracy(metrics_dir, images_dir, model_name, dataset_name, lang):
         dataset_name (str): Name of the dataset.
         lang (str): Language for which to plot the accuracy.
     """
-    records = ut.read_metrics(metrics_dir)
-
     model_name = model_name.split("/")[-1]
+    
+    records = ut.read_metrics(os.path.join(metrics_dir, model_name, dataset_name))
+    
     palette = {"hidden": "red", "mlp": "blue", "attn": "green"}
 
     image_save_dir = os.path.join(images_dir, "hallucination_detection")
@@ -119,9 +127,9 @@ def plot_all_langs_accuracy(metrics_dir, images_dir, model_name, dataset_name):
         model_name (str): Name of the LLM.
         dataset_name (str): Name of the dataset.
     """
-    records = ut.read_metrics(metrics_dir)
-
     model_name = model_name.split("/")[-1]
+    
+    records = ut.read_metrics(os.path.join(metrics_dir, model_name, dataset_name))
 
     image_save_dir = os.path.join(images_dir, "hallucination_detection")
     os.makedirs(image_save_dir, exist_ok=True)
