@@ -4,6 +4,8 @@ import torch
 import pandas as pd
 from tqdm import tqdm
 import src.model.utils as ut
+from accelerate import PartialState
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from src.model.SnyderEtAlProbing import SnyderEtAlProbing
 from src.data.MushroomDataset import MushroomDataset
 from src.data.HaluEvalDataset import HaluEvalDataset
@@ -120,13 +122,23 @@ class SnyderEtAlEarlyDetection:
             raise ValueError(f"Dataset {dataset_name} not supported.")
 
 
-    def load_llm(self, llm_name, use_local=False, dtype=torch.bfloat16, use_device_map=True, use_flash_attn=False):
+    def load_llm(self, llm_name, use_local=False):
         print("--"*50)
         print(f"Loading LLM {llm_name}")
         print("--"*50)
-        self.llm_name = llm_name
-        self.tokenizer = ut.load_tokenizer(llm_name, local=use_local)
-        self.llm = ut.load_llm(llm_name, ut.create_bnb_config(), local=use_local, dtype=dtype, use_device_map=use_device_map, use_flash_attention=use_flash_attn)
+        self.llm_name = f'{self.model_repos[llm_name][0]}/{llm_name}'
+
+        if use_local:
+            model_local_path = ut.get_weight_dir(self.llm_name)
+            self.tokenizer = AutoTokenizer.from_pretrained(model_local_path, local_files_only=True, token=True)
+            self.llm = AutoModelForCausalLM.from_pretrained(model_local_path, local_files_only=True,
+                                                device_map={'':PartialState().process_index},
+                                                torch_dtype=torch.bfloat16)
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.llm_name, token=True)
+            self.llm = AutoModelForCausalLM.from_pretrained(self.llm_name, 
+                                                device_map={'':PartialState().process_index},
+                                                torch_dtype=torch.bfloat16)
         print("--"*50)
 
     
@@ -144,7 +156,7 @@ class SnyderEtAlEarlyDetection:
     @torch.no_grad()
     def predict_llm(self, llm_name, data_name=DEFAULT_DATASET, label=1, use_local=False, dtype=torch.bfloat16, use_device_map=True, use_flash_attn=False):
         self.load_dataset(dataset_name=data_name, use_local=use_local, label=label)
-        self.load_llm(llm_name, use_local=use_local, dtype=dtype, use_device_map=use_device_map, use_flash_attn=use_flash_attn)
+        self.load_llm(llm_name, use_local=use_local)
 
         print("--"*50)
         print("Hallucination Detection - Saving LLM's activations")
@@ -299,31 +311,35 @@ class SnyderEtAlEarlyDetection:
 
 
     def get_start_end_layer(self, model):
-        if "llama" in self.model_name:
+        if "llama" in self.llm_name:
             layer_count = model.model.layers
-        elif "falcon" in self.model_name:
+        elif "falcon" in self.llm_name:
             layer_count = model.transformer.h
         else:
             layer_count = model.model.decoder.layers
-        layer_st = 0 if SnyderEtAlEarlyDetection.layer_number == -1 else SnyderEtAlEarlyDetection.layer_number
-        layer_en = len(layer_count) if SnyderEtAlEarlyDetection.layer_number == -1 else SnyderEtAlEarlyDetection.layer_number + 1
+        layer_st = 0 if self.layer_number == -1 else self.layer_number
+        layer_en = len(layer_count) if self.layer_number == -1 else self.layer_number + 1
         return layer_st, layer_en
 
 
     def collect_fully_connected(self, token_pos, layer_start, layer_end):
-        layer_name = SnyderEtAlEarlyDetection.model_repos[self.llm_name][1][2:].split(SnyderEtAlEarlyDetection.coll_str)
-        first_activation = np.stack([SnyderEtAlEarlyDetection.fully_connected_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][-1][token_pos] \
+        model_name = self.llm_name.split("/")[-1]
+
+        layer_name = self.model_repos[model_name][1][2:].split(self.coll_str)
+        first_activation = np.stack([self.fully_connected_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][-1][token_pos] \
                                     for i in range(layer_start, layer_end)])
-        final_activation = np.stack([SnyderEtAlEarlyDetection.fully_connected_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][-1][-1] \
+        final_activation = np.stack([self.fully_connected_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][-1][-1] \
                                     for i in range(layer_start, layer_end)])
         return first_activation, final_activation
 
 
     def collect_attention(self, token_pos, layer_start, layer_end):
-        layer_name = SnyderEtAlEarlyDetection.model_repos[self.llm_name][2][2:].split(SnyderEtAlEarlyDetection.coll_str)
-        first_activation = np.stack([SnyderEtAlEarlyDetection.attention_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][-1][token_pos] \
+        model_name = self.llm_name.split("/")[-1]
+
+        layer_name = self.model_repos[model_name][2][2:].split(self.coll_str)
+        first_activation = np.stack([self.attention_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][-1][token_pos] \
                                     for i in range(layer_start, layer_end)])
-        final_activation = np.stack([SnyderEtAlEarlyDetection.attention_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][-1][-1] \
+        final_activation = np.stack([self.attention_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][-1][-1] \
                                     for i in range(layer_start, layer_end)])
         return first_activation, final_activation
 
@@ -374,23 +390,24 @@ class SnyderEtAlEarlyDetection:
 
     def compute_and_save_results(self):
         question_asker = self.answer_trivia
+        model_name = self.llm_name.split("/")[-1]
         
         forward_func = partial(SnyderEtAlEarlyDetection.model_forward, model=self.llm, extra_forward_args={})
         embedder = self.get_embedder(self.llm)
 
         # Prepare to save the internal states
         for name, module in self.llm.named_modules():
-            if re.match(f'{SnyderEtAlEarlyDetection.model_repos[self.model_name][1]}$', name):
-                SnyderEtAlEarlyDetection.fully_connected_forward_handles[name] = module.register_forward_hook(
+            if re.match(f'{self.model_repos[model_name][1]}$', name):
+                self.fully_connected_forward_handles[name] = module.register_forward_hook(
                     partial(SnyderEtAlEarlyDetection.save_fully_connected_hidden, name))
-            if re.match(f'{SnyderEtAlEarlyDetection.model_repos[self.model_name][2]}$', name):
-                SnyderEtAlEarlyDetection.attention_forward_handles[name] = module.register_forward_hook(partial(SnyderEtAlEarlyDetection.save_attention_hidden, name))
+            if re.match(f'{self.model_repos[model_name][2]}$', name):
+                self.attention_forward_handles[name] = module.register_forward_hook(partial(SnyderEtAlEarlyDetection.save_attention_hidden, name))
 
         # Generate results
         results = defaultdict(list)
         for idx in tqdm(range(len(self.dataset))):
-            SnyderEtAlEarlyDetection.fully_connected_hidden_layers.clear()
-            SnyderEtAlEarlyDetection.attention_hidden_layers.clear()
+            self.fully_connected_hidden_layers.clear()
+            self.attention_hidden_layers.clear()
 
             question, answer, instance_id = self.dataset[idx]
             response, str_response, logits, start_pos = question_asker(question, answer, self.llm, self.tokenizer)
@@ -412,7 +429,9 @@ class SnyderEtAlEarlyDetection:
             results['final_attention'].append(final_attention)
             results["attribution"].append(attributes_first)
         
-        self.results_pkl_path = os.path.join(self.project_dir, self.CACHE_DIR_NAME, f"{self.llm_name}_{self.dataset_name}_start-{SnyderEtAlEarlyDetection.start}_end-{SnyderEtAlEarlyDetection.end}_{datetime.now().month}_{datetime.now().day}.pickle")
+        model_name = self.llm_name.split("/")[-1]
+
+        self.results_pkl_path = os.path.join(self.project_dir, self.CACHE_DIR_NAME, f"{model_name}_{self.dataset_name}_start-{SnyderEtAlEarlyDetection.start}_end-{SnyderEtAlEarlyDetection.end}_{datetime.now().month}_{datetime.now().day}.pickle")
         
         with open(self.results_pkl_path, "wb") as outfile:
             outfile.write(pickle.dumps(results))

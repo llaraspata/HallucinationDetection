@@ -15,6 +15,9 @@ def main(args):
     llm_name = model_name.split("/")[-1]
 
     for label, desc in HallucinationDetection.LABELS.items():
+        if data_name == "mushroom" and label == 0:
+            continue
+        
         print("=="*50)
         print(f"Predicting {desc} instances")
         print("=="*50)

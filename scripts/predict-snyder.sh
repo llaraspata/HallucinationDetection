@@ -8,7 +8,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --gpus-per-task=1
-#SBATCH --mem=10000
+#SBATCH --mem=123000
 #SBATCH --job-name=predict-snyder
 #SBATCH --out=output.log
 #SBATCH --err=error.log
