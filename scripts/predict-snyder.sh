@@ -6,8 +6,8 @@
 #SBATCH --time=24:00:00
 #SBATCH -N 1 
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
-#SBATCH --gpus-per-task=1
+#SBATCH --cpus-per-task=2
+#SBATCH --gpus-per-task=4
 #SBATCH --mem=123000
 #SBATCH --job-name=predict-snyder
 #SBATCH --out=output.log
