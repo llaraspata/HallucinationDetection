@@ -47,6 +47,9 @@ class SnyderEtAlEarlyDetection:
     gpu = "0"
     device = torch.device(f"cuda:{gpu}" if torch.cuda.is_available() else "cpu")
 
+    # Batch processing
+    BATCH_SIZE = 8  # Number of samples to process in parallel
+
     # Integrated Grads
     ig_steps = 64
     internal_batch_size = 4
@@ -95,8 +98,13 @@ class SnyderEtAlEarlyDetection:
     # -------------
     # Constructor
     # -------------
-    def __init__(self, project_dir):
+    def __init__(self, project_dir, batch_size=None):
         self.project_dir = project_dir
+        if batch_size is not None:
+            self.BATCH_SIZE = batch_size
+        else:
+            # Auto-determine optimal batch size
+            self.BATCH_SIZE = self.get_optimal_batch_size()
 
     
     def load_dataset(self, dataset_name=DEFAULT_DATASET, use_local=False, label=1):
@@ -132,13 +140,15 @@ class SnyderEtAlEarlyDetection:
             model_local_path = ut.get_weight_dir(self.llm_name)
             self.tokenizer = AutoTokenizer.from_pretrained(model_local_path, local_files_only=True, token=True)
             self.llm = AutoModelForCausalLM.from_pretrained(model_local_path, local_files_only=True,
-                                                device_map={'':PartialState().process_index},
-                                                torch_dtype=torch.bfloat16)
+                                                            quantization_config=ut.create_bnb_config(),
+                                                            device_map={'':PartialState().process_index},
+                                                            torch_dtype=torch.bfloat16)
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(self.llm_name, token=True)
             self.llm = AutoModelForCausalLM.from_pretrained(self.llm_name, 
-                                                device_map={'':PartialState().process_index},
-                                                torch_dtype=torch.bfloat16)
+                                                            quantization_config=ut.create_bnb_config(),
+                                                            device_map={'':PartialState().process_index},
+                                                            torch_dtype=torch.bfloat16)
         print("--"*50)
 
     
@@ -154,19 +164,23 @@ class SnyderEtAlEarlyDetection:
     # Main Methods
     # -------------
     @torch.no_grad()
-    def predict_llm(self, llm_name, data_name=DEFAULT_DATASET, label=1, use_local=False, dtype=torch.bfloat16, use_device_map=True, use_flash_attn=False):
+    def predict_llm(self, llm_name, data_name=DEFAULT_DATASET, label=1, use_local=False, batch_size=None, dtype=torch.bfloat16, use_device_map=True, use_flash_attn=False):
+        if batch_size is None:
+            batch_size = self.BATCH_SIZE
+            
         self.load_dataset(dataset_name=data_name, use_local=use_local, label=label)
         self.load_llm(llm_name, use_local=use_local)
 
         print("--"*50)
         print("Hallucination Detection - Saving LLM's activations")
+        print(f"Batch size: {batch_size}")
         print("--"*50)
         
         print("\n0. Prepare folders")
         self._create_folders_if_not_exists(label=label)
     
         print(f"\n1. Saving {self.llm_name} activations for layers {self.TARGET_LAYERS}")
-        self.compute_and_save_results()
+        self.compute_and_save_results(batch_size=batch_size)
         
         print("--"*50)
 
@@ -180,46 +194,53 @@ class SnyderEtAlEarlyDetection:
         print("Hallucination Detection - Saving Hallucination Probing Predictions")
         print(f"Label: {self.LABELS[label]}")
         print("--"*50)
-        
-        with open(self.results_pkl_path, "rb") as infile:
-            activations = pickle.loads(infile.read())
+        model_name = llm_name.split("/")[-1]
 
-        result_path = os.path.join(self.project_dir, self.PREDICTION_DIR, llm_name)
+        result_path = os.path.join(self.project_dir, self.PREDICTION_DIR, model_name, self.dataset_name)
         
-        n_instances = len(activations['instance_id'])
+        activations_path = os.path.join(self.project_dir, self.CACHE_DIR_NAME, model_name, self.dataset_name, self.LABELS[label])
+        act_files = os.listdir(activations_path)
+        act_files = [f for f in act_files if f.endswith(".pickle")]
 
         preds = []
 
         if activation == "logits" or activation == "attribution":
             preds_filename = self.PREDICTIONS_FILE_NAME
 
-            for i in tqdm(range(n_instances), desc="Predicting"):
-                instance_id = activations['instance_id'][i]
+            for instance_file in tqdm(act_files, desc=f"Processing {activation}"):
+                with open(os.path.join(activations_path, instance_file), "rb") as f:
+                    activation_data = pickle.load(f)
+
+                instance_id = activation_data['instance_id']
 
                 pred = {
                     "instance_id": instance_id,
                     "lang": self.dataset.get_language_by_instance_id(instance_id),
-                    "prediction": self.probing_model.predict(activations[activation][i]).item(),
+                    "prediction": self.probing_model.predict(activation_data[activation]).item(),
                     "label": label
                 }
 
                 preds.append(pred)
+
         else:
-            preds_filename = self.PREDICTIONS_LAYER_FILE_NAME
+            preds_filename = self.PREDICTIONS_LAYER_FILE_NAME.format(layer=layer)
             
-            for i in tqdm(range(n_instances), desc="Predicting"):
-                instance_id = activations['instance_id'][i][layer]
+            for instance_file in tqdm(act_files, desc=f"Processing {activation} layer {layer}"):
+                with open(os.path.join(activations_path, instance_file), "rb") as f:
+                    activation_data = pickle.load(f)
+
+                instance_id = activation_data['instance_id'][layer]
 
                 pred = {
                     "instance_id": instance_id,
                     "lang": self.dataset.get_language_by_instance_id(instance_id),
-                    "prediction": self.probing_model.predict(activations[activation][i][layer]).item(),
+                    "prediction": self.probing_model.predict(activation_data[activation][layer]).item(),
                     "label": label
                 }
 
                 preds.append(pred)
 
-        path_to_save = os.path.join(result_path, self.dataset_name, activation, preds_filename)
+        path_to_save = os.path.join(result_path, activation, preds_filename)
 
         if not os.path.exists(os.path.dirname(path_to_save)):
             os.makedirs(os.path.dirname(path_to_save))
@@ -260,6 +281,162 @@ class SnyderEtAlEarlyDetection:
     # -------------
     # Public Methods
     # -------------
+    def compute_and_save_results(self, batch_size=None):
+        if batch_size is None:
+            batch_size = self.BATCH_SIZE
+            
+        question_asker = self.answer_trivia_batch
+        model_name = self.llm_name.split("/")[-1]
+        
+        forward_func = partial(SnyderEtAlEarlyDetection.model_forward, model=self.llm, extra_forward_args={})
+        embedder = self.get_embedder(self.llm)
+
+        # Prepare to save the internal states
+        for name, module in self.llm.named_modules():
+            if re.match(f'{self.model_repos[model_name][1]}$', name):
+                self.fully_connected_forward_handles[name] = module.register_forward_hook(
+                    partial(SnyderEtAlEarlyDetection.save_fully_connected_hidden, name))
+            if re.match(f'{self.model_repos[model_name][2]}$', name):
+                self.attention_forward_handles[name] = module.register_forward_hook(partial(SnyderEtAlEarlyDetection.save_attention_hidden, name))
+
+        # Generate results in batches
+        dataset_size = len(self.dataset)
+        num_batches = (dataset_size + batch_size - 1) // batch_size
+        
+        print(f"Processing {dataset_size} samples in {num_batches} batches of size {batch_size}")
+        
+        for batch_idx in tqdm(range(num_batches), desc="Processing batches"):
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, dataset_size)
+            current_batch_size = end_idx - start_idx
+            
+            print(f"Batch {batch_idx + 1}/{num_batches}: processing samples {start_idx} to {end_idx-1} ({current_batch_size} samples)")
+            
+            # Clear accumulated activations
+            self.fully_connected_hidden_layers.clear()
+            self.attention_hidden_layers.clear()
+            
+            # Prepare batch data
+            batch_questions = []
+            batch_answers = []
+            batch_instance_ids = []
+            
+            for idx in range(start_idx, end_idx):
+                question, answer, instance_id = self.dataset[idx]
+                batch_questions.append(question)
+                batch_answers.append(answer)
+                batch_instance_ids.append(instance_id)
+            
+            # Process batch
+            batch_results = question_asker(batch_questions, batch_answers, self.llm, self.tokenizer)
+            layer_start, layer_end = self.get_start_end_layer(self.llm)
+            
+            # Process each sample in the batch
+            for i, (responses, str_responses, logits, start_pos) in enumerate(batch_results):
+                instance_id = batch_instance_ids[i]
+                question = batch_questions[i]
+                answer = batch_answers[i]
+                
+                first_fully_connected, final_fully_connected = self.collect_fully_connected_batch(start_pos, layer_start, layer_end, i)
+                first_attention, final_attention = self.collect_attention_batch(start_pos, layer_start, layer_end, i)
+                attributes_first = SnyderEtAlEarlyDetection.get_ig(question, forward_func, self.tokenizer, embedder, self.llm)
+                
+                result = {
+                    'instance_id': instance_id,
+                    'question': question,
+                    'answers': answer,
+                    'response': responses,
+                    'str_response': str_responses,
+                    'logits': logits.to(torch.float32).cpu().numpy(),
+                    'start_pos': start_pos,
+                    "fully": first_fully_connected,
+                    'final_fully_connected': final_fully_connected,
+                    "attn": first_attention,
+                    'final_attention': final_attention,
+                    "attribution": attributes_first
+                }
+
+                result_pkl_path = os.path.join(self.project_dir, self.CACHE_DIR_NAME, model_name, self.dataset_name, self.LABELS[self.label], f"data_instance{instance_id}.pickle")
+                os.makedirs(os.path.dirname(result_pkl_path), exist_ok=True)
+                
+                with open(result_pkl_path, "wb") as outfile:
+                    outfile.write(pickle.dumps(result))
+
+                del first_fully_connected, final_fully_connected, first_attention, final_attention, attributes_first
+            
+            # Clean up batch results
+            del batch_results
+            torch.cuda.empty_cache()
+
+        # Deallocate LLM and tokenizer + clear cache
+        self.llm = None
+        self.tokenizer = None
+        torch.cuda.empty_cache()
+
+
+    @staticmethod
+    def compute_all_metrics(preds, data_name):
+        # Convert preds to a df
+        preds_df = pd.DataFrame(preds)
+        
+        # Compute metrics at dataset level
+        all_preds = preds_df["prediction"].tolist()
+
+        if data_name == SnyderEtAlEarlyDetection.DEFAULT_DATASET:
+            labels = [1.] * len(all_preds)  # All instances are hallucinations
+        else:
+            labels = preds_df["label"].tolist()
+
+        metrics = SnyderEtAlEarlyDetection.compute_metrics(all_preds, labels)
+
+        # Compute metrics for each language - Only MashRoom has multiple languages
+        if data_name == SnyderEtAlEarlyDetection.DEFAULT_DATASET:
+            langs = preds_df["lang"].unique()
+            for lang in langs:
+                lang_preds = preds_df[preds_df["lang"] == lang]["prediction"].tolist()
+                labels = [1.] * len(lang_preds)  # All instances are hallucinations
+                lang_metrics = SnyderEtAlEarlyDetection.compute_metrics(lang_preds, labels)
+                metrics[lang] = lang_metrics["ACC"]
+
+        return metrics
+
+
+    @staticmethod
+    def compute_metrics(preds, labels):
+        correct = sum([1 for p, l in zip(preds, labels) if p == l])
+
+        AUC = roc_auc_score(labels, preds)
+        precision, recall, thresholds = precision_recall_curve(labels, preds)
+        AUPRC = auc(recall, precision)
+        ACC = correct / len(labels)
+
+        return {"ACC": ACC, "AUC": AUC, "AUPRC": AUPRC}
+    
+
+    # -------------
+    # Utility Methods
+    # -------------
+    @staticmethod
+    def get_optimal_batch_size(available_memory_gb=None):
+        """Calculate optimal batch size based on available GPU memory"""
+        if available_memory_gb is None:
+            if torch.cuda.is_available():
+                # Get available GPU memory in GB
+                available_memory_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+            else:
+                available_memory_gb = 8  # Default for CPU
+        
+        # Rough heuristic: larger models need smaller batch sizes
+        if available_memory_gb >= 32:
+            return 16
+        elif available_memory_gb >= 16:
+            return 8
+        elif available_memory_gb >= 8:
+            return 4
+        else:
+            return 2
+
+
     def save_fully_connected_hidden(layer_name, mod, inp, out):
         SnyderEtAlEarlyDetection.fully_connected_hidden_layers[layer_name].append(out.squeeze().detach().to(torch.float32).cpu().numpy())
 
@@ -298,7 +475,7 @@ class SnyderEtAlEarlyDetection:
 
     def answer_question(self, question, answer, model, tokenizer, *, max_length=100, pbar=False):
         model_input = prompt.format(question=question, answer=answer)
-        input_ids = tokenizer(model_input, return_tensors='pt').input_ids.to(model.device)
+        input_ids = tokenizer(model_input, return_tensors='pt', truncation=True ).input_ids.to(model.device)
         response, logits = self.generate_response(input_ids, model, max_length=max_length, pbar=pbar)
         return response, logits, input_ids.shape[-1]
 
@@ -308,6 +485,49 @@ class SnyderEtAlEarlyDetection:
         str_response = tokenizer.decode(response, skip_special_tokens=True)
         
         return response, str_response, logits, start_pos
+
+
+    def answer_trivia_batch(self, questions, answers, model, tokenizer):
+        """Process multiple questions in batch for better efficiency"""
+        batch_results = []
+        
+        # Prepare batch inputs
+        batch_prompts = []
+        for question, answer in zip(questions, answers):
+            model_input = prompt.format(question=question, answer=answer)
+            batch_prompts.append(model_input)
+        
+        # Tokenize batch
+        batch_encoded = tokenizer(batch_prompts, return_tensors='pt', padding=True, truncation=True)
+        batch_input_ids = batch_encoded.input_ids.to(model.device)
+        batch_attention_mask = batch_encoded.attention_mask.to(model.device)
+        
+        # Get start positions for each sample in batch
+        start_positions = batch_input_ids.shape[-1]
+        
+        # Process each sample individually due to generation complexity
+        # Full batch generation would require significant refactoring of generation logic
+        for i in range(len(questions)):
+            input_ids = batch_input_ids[i:i+1]  # Keep batch dimension
+            response, logits = self.generate_response(input_ids, model, max_length=self.MAX_NEW_TOKENS)
+            str_response = tokenizer.decode(response, skip_special_tokens=True)
+            batch_results.append((response, str_response, logits, start_positions))
+        
+        return batch_results
+
+
+    def answer_trivia_batch_optimized(self, questions, answers, model, tokenizer):
+        """Optimized batch processing - experimental"""
+        # This is a more experimental approach that could be developed further
+        # for true parallel generation across the batch
+        batch_results = []
+        
+        # For now, process sequentially but with better memory management
+        for question, answer in zip(questions, answers):
+            response, str_response, logits, start_pos = self.answer_trivia(question, answer, model, tokenizer)
+            batch_results.append((response, str_response, logits, start_pos))
+        
+        return batch_results
 
 
     def get_start_end_layer(self, model):
@@ -333,6 +553,20 @@ class SnyderEtAlEarlyDetection:
         return first_activation, final_activation
 
 
+    def collect_fully_connected_batch(self, token_pos, layer_start, layer_end, batch_idx):
+        """Collect fully connected activations for a specific item in the batch"""
+        model_name = self.llm_name.split("/")[-1]
+
+        layer_name = self.model_repos[model_name][1][2:].split(self.coll_str)
+        
+        # Get activations for the specific batch index
+        first_activation = np.stack([self.fully_connected_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][batch_idx][token_pos] \
+                                    for i in range(layer_start, layer_end)])
+        final_activation = np.stack([self.fully_connected_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][batch_idx][-1] \
+                                    for i in range(layer_start, layer_end)])
+        return first_activation, final_activation
+
+
     def collect_attention(self, token_pos, layer_start, layer_end):
         model_name = self.llm_name.split("/")[-1]
 
@@ -340,6 +574,20 @@ class SnyderEtAlEarlyDetection:
         first_activation = np.stack([self.attention_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][-1][token_pos] \
                                     for i in range(layer_start, layer_end)])
         final_activation = np.stack([self.attention_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][-1][-1] \
+                                    for i in range(layer_start, layer_end)])
+        return first_activation, final_activation
+
+
+    def collect_attention_batch(self, token_pos, layer_start, layer_end, batch_idx):
+        """Collect attention activations for a specific item in the batch"""
+        model_name = self.llm_name.split("/")[-1]
+
+        layer_name = self.model_repos[model_name][2][2:].split(self.coll_str)
+        
+        # Get activations for the specific batch index
+        first_activation = np.stack([self.attention_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][batch_idx][token_pos] \
+                                    for i in range(layer_start, layer_end)])
+        final_activation = np.stack([self.attention_hidden_layers[f'{layer_name[0]}{i}{layer_name[1]}'][batch_idx][-1] \
                                     for i in range(layer_start, layer_end)])
         return first_activation, final_activation
 
@@ -388,97 +636,6 @@ class SnyderEtAlEarlyDetection:
         return attributes
 
 
-    def compute_and_save_results(self):
-        question_asker = self.answer_trivia
-        model_name = self.llm_name.split("/")[-1]
-        
-        forward_func = partial(SnyderEtAlEarlyDetection.model_forward, model=self.llm, extra_forward_args={})
-        embedder = self.get_embedder(self.llm)
-
-        # Prepare to save the internal states
-        for name, module in self.llm.named_modules():
-            if re.match(f'{self.model_repos[model_name][1]}$', name):
-                self.fully_connected_forward_handles[name] = module.register_forward_hook(
-                    partial(SnyderEtAlEarlyDetection.save_fully_connected_hidden, name))
-            if re.match(f'{self.model_repos[model_name][2]}$', name):
-                self.attention_forward_handles[name] = module.register_forward_hook(partial(SnyderEtAlEarlyDetection.save_attention_hidden, name))
-
-        # Generate results
-        results = defaultdict(list)
-        for idx in tqdm(range(len(self.dataset))):
-            self.fully_connected_hidden_layers.clear()
-            self.attention_hidden_layers.clear()
-
-            question, answer, instance_id = self.dataset[idx]
-            response, str_response, logits, start_pos = question_asker(question, answer, self.llm, self.tokenizer)
-            layer_start, layer_end = self.get_start_end_layer(self.llm)
-            first_fully_connected, final_fully_connected = self.collect_fully_connected(start_pos, layer_start, layer_end)
-            first_attention, final_attention = self.collect_attention(start_pos, layer_start, layer_end)
-            attributes_first = SnyderEtAlEarlyDetection.get_ig(question, forward_func, self.tokenizer, embedder, self.llm)
-
-            results['instance_id'].append(instance_id)
-            results['question'].append(question)
-            results['answers'].append(answer)
-            results['response'].append(response)
-            results['str_response'].append(str_response)
-            results['logits'].append(logits.to(torch.float32).cpu().numpy())
-            results['start_pos'].append(start_pos)
-            results["fully"].append(first_fully_connected)
-            results['final_fully_connected'].append(final_fully_connected)
-            results["attn"].append(first_attention)
-            results['final_attention'].append(final_attention)
-            results["attribution"].append(attributes_first)
-        
-        model_name = self.llm_name.split("/")[-1]
-
-        self.results_pkl_path = os.path.join(self.project_dir, self.CACHE_DIR_NAME, f"{model_name}_{self.dataset_name}_start-{SnyderEtAlEarlyDetection.start}_end-{SnyderEtAlEarlyDetection.end}_{datetime.now().month}_{datetime.now().day}.pickle")
-        
-        with open(self.results_pkl_path, "wb") as outfile:
-            outfile.write(pickle.dumps(results))
-
-
-    @staticmethod
-    def compute_all_metrics(preds, data_name):
-        # Convert preds to a df
-        preds_df = pd.DataFrame(preds)
-        
-        # Compute metrics at dataset level
-        all_preds = preds_df["prediction"].tolist()
-
-        if data_name == SnyderEtAlEarlyDetection.DEFAULT_DATASET:
-            labels = [1.] * len(all_preds)  # All instances are hallucinations
-        else:
-            labels = preds_df["label"].tolist()
-
-        metrics = SnyderEtAlEarlyDetection.compute_metrics(all_preds, labels)
-
-        # Compute metrics for each language - Only MashRoom has multiple languages
-        if data_name == SnyderEtAlEarlyDetection.DEFAULT_DATASET:
-            langs = preds_df["lang"].unique()
-            for lang in langs:
-                lang_preds = preds_df[preds_df["lang"] == lang]["prediction"].tolist()
-                labels = [1.] * len(lang_preds)  # All instances are hallucinations
-                lang_metrics = SnyderEtAlEarlyDetection.compute_metrics(lang_preds, labels)
-                metrics[lang] = lang_metrics["ACC"]
-
-        return metrics
-
-
-    @staticmethod
-    def compute_metrics(preds, labels):
-        correct = sum([1 for p, l in zip(preds, labels) if p == l])
-
-        AUC = roc_auc_score(labels, preds)
-        precision, recall, thresholds = precision_recall_curve(labels, preds)
-        AUPRC = auc(recall, precision)
-        ACC = correct / len(labels)
-
-        return {"ACC": ACC, "AUC": AUC, "AUPRC": AUPRC}
-    
-
-    # -------------
-    # Utility Methods
-    # -------------
     def _get_task_name(self, label):
         return self.LABELS[label]
 
