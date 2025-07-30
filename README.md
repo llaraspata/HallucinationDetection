@@ -153,7 +153,6 @@ HallucinationDetection/
 ├── 📄 README.md
 ├── 📄 requirements.txt
 ├── 📄 setup.py
-├── 📦 models.zip                             # Compressed trained knowledge conflicts probing models
 ├── 📁 data/                                  # Mu-SHROOM dataset
 ├── 📁 src/                                   # Main source code for detecting hallucinations through knowledge conflicts
 │   ├── 📁 data/                              # Dataset loaders and processors
