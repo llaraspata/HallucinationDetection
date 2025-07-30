@@ -96,6 +96,5 @@ target/
 # Project related
 wandb/
 models/
-images/
 artifacts/
 activation_cache/
