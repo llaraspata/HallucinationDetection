@@ -13,7 +13,7 @@
 #SBATCH --out=output_halueval.log
 #SBATCH --err=error_halueval.log
 #SBATCH --mail-type=ALL
-#SBATCH --mail-user=l.laraspata3@phd.uniba.it
+#SBATCH --mail-user=mail@domain.com
 
 export WANDB_MODE="offline"
 
