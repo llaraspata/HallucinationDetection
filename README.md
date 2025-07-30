@@ -168,8 +168,8 @@ HallucinationDetection/
 ├── 📁 images/                                # Documentation images and schemas
 │   ├── 📁 schema/                            # Architecture diagrams (SVG)
 │   └── 📁 hallucination_detection/           # Result visualizations
-├── 📁 llm-hallucinations-factual-qa/         # Original hallucination detection research
-├── 📁 SAE-based-representation-engineering/  # Original Knowledge conflict probing research
+├── 📁 llm-hallucinations-factual-qa/         # Original hallucination detection research (with further implementation for our research)
+├── 📁 SAE-based-representation-engineering/  # Original Knowledge conflict probing research (with further implementation for our research)
 └── 📁 wandb/                                 # Weights & Biases experiment logs
 ```
 
