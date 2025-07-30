@@ -1,4 +1,4 @@
-# Analysing the correlation between Hallucinations and Knowledge Conflicts in Large Language Models
+# Analyzing the correlation between Hallucinations and Knowledge Conflicts in Large Language Models
 
 
 This project investigates whether hallucinations correlate to knowledge conflicts in LLMs. It provides tools and scripts to collect, analyze, and probe model outputs for factual inconsistencies, supporting research into model reliability and interpretability. 
@@ -160,7 +160,7 @@ HallucinationDetection/
 │   ├── 📁 evaluation/                        # Evaluation metrics and scripts
 │   └── 📁 visualization/                     # Plotting and analysis tools
 ├── 📁 models/                                # Trained probing models
-├── 📁 notebooks/                             # Analysis notebooks
+├── 📁 notebooks/                             # Analyzis notebooks
 ├── 📁 results/                               # Evaluation results
 ├── 📁 predictions/                           # Model predictions
 ├── 📁 scripts/                               # Utility scripts
