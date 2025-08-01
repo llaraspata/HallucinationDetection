@@ -19,6 +19,7 @@ Vice versa, to check if knowledge conflicts can be detected by using hallucinati
 1. Clone the repository:
 ```bash
 git clone github_repo_url
+git submodule update --init --recursive
 cd HallucinationDetection
 ```
 
