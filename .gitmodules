@@ -1,0 +1,6 @@
+[submodule "llm-hallucinations-factual-qa"]
+	path = llm-hallucinations-factual-qa
+	url = https://github.com/lucrezialaraspata/llm-hallucinations-factual-qa.git
+[submodule "SAE-based-representation-engineering"]
+	path = SAE-based-representation-engineering
+	url = https://github.com/lucrezialaraspata/SAE-based-representation-engineering.git
