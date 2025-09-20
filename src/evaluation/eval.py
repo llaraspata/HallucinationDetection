@@ -7,7 +7,7 @@ from src.model.HallucinationDetection import HallucinationDetection
 
 PROJECT_ROOT = os.getcwd()
 
-WANDB_ENTITY = "anonym_user-anonym_lab"
+WANDB_ENTITY = "llaraspata_cilab"
 WANDB_PROJECT = "Hallucination"
 DATASET_NAME = "mushroom"
 WANDB_RUN_NAME = "eval-{dataset_name}"

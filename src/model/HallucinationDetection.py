@@ -168,10 +168,7 @@ class HallucinationDetection:
         
         print("--"*50)
 
-
-    # -------------
-    # Public Methods
-    # -------------
+    
     def save_activations(self):
         module_names = []
         module_names += [f'model.layers.{idx}' for idx in self.TARGET_LAYERS]

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH -A [removed for anonymization]
+#SBATCH -A IscrC_EXAM
 #SBATCH -p boost_usr_prod
 #SBATCH --qos normal
 #SBATCH --time=24:00:00
@@ -13,7 +13,7 @@
 #SBATCH --out=output_halueval.log
 #SBATCH --err=error_halueval.log
 #SBATCH --mail-type=ALL
-#SBATCH --mail-user=mail@domain.com
+#SBATCH --mail-user=l.laraspata3@phd.uniba.it
 
 export WANDB_MODE="offline"
 
